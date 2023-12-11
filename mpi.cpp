@@ -55,13 +55,46 @@ void read_two_integers(int &value1, int &value2) {
 MPI_Datatype myDataType;
 MPI_Aint extent;
 
-void iterate(const double *chunk, double *res, int chunk_size, int n, int* fixed, int fixed_size) {
+void iterate(const double *chunk, double *res, int chunk_size, int n, const int* fixed, int fixed_size, const AntiAliasingDirection dir) {
   int fixed_i = 0;
+  if (dir == AntiAliasingDirection::FIRST || dir == AntiAliasingDirection::FULL) {
+    const double* r = &chunk[0];
+    const double* next = &chunk[n];
+
+    {
+      if (fixed_i < fixed_size && 0 == fixed[fixed_i]) {
+        fixed_i++;
+      } else {
+        res[0] = (r[0] + r[1] + next[0]) / 3;
+      }
+    }
+    for (int j = 1; j < n - 1; j++) {
+      if (fixed_i < fixed_size && j == fixed[fixed_i]) {
+        fixed_i++;
+        continue;
+      }
+      res[j] = (r[j] + r[j - 1] + r[j + 1] + next[j]) / 4; 
+    }
+    {
+      if (fixed_i < fixed_size && n - 1 == fixed[fixed_i]) {
+        fixed_i++;
+      } else {
+        res[n - 1] = (r[n - 1] + r[n - 2] + next[n - 1]) / 3;
+      }
+    }
+  }
   for (int i = 1; i < chunk_size / n - 1; i++) {
     const double* prev = &chunk[(i - 1) * n];
     const double* r = &chunk[i * n];
     const double* next = &chunk[(i + 1) * n];
-    
+    {
+      int index = i * n;
+      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
+        fixed_i++;
+      } else {
+        res[index] = (r[0] + r[1] + prev[0] + next[0]) / 4;
+      }
+    }
     for (int j = 1; j < n - 1; j++) {
       int index = i * n + j;
 
@@ -69,7 +102,43 @@ void iterate(const double *chunk, double *res, int chunk_size, int n, int* fixed
         fixed_i++;
         continue;
       }
-      res[index] = 0.2 * (r[j] + r[j - 1] + r[j + 1] + prev[j] + next[j]); 
+      res[index] = (r[j] + r[j - 1] + r[j + 1] + prev[j] + next[j]) / 5; 
+    }
+    {
+      int index = i * n + n - 1;
+      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
+        fixed_i++;
+      } else {
+        res[index] = (r[n - 1] + r[n - 2] + prev[n - 1] + next[n - 1]) / 4;
+      }
+    }
+  }
+  if (dir == AntiAliasingDirection::LAST || dir == AntiAliasingDirection::FULL) {
+    const double* r = &chunk[chunk_size - n];
+    const double* prev = &chunk[chunk_size - (n * 2)];
+    {
+      int index = chunk_size - n;
+      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
+        fixed_i++;
+      } else {
+        res[index] = (r[0] + r[1] + prev[0]) / 3;
+      }
+    }
+    for (int j = 1; j < n - 1; j++) {
+      int index = chunk_size - n + j;
+      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
+        fixed_i++;
+        continue;
+      }
+      res[index] = (r[j] + r[j - 1] + r[j + 1] + prev[j]) / 4; 
+    }
+    {
+      int index = chunk_size - 1;
+      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
+        fixed_i++;
+      } else {
+        res[index] = (r[n - 1] + r[n - 2] + prev[n - 1]) / 3;
+      }
     }
   }
 }
@@ -140,8 +209,6 @@ void send_chunks(int m, int n, int threads, double *res, const int *fixed, int k
     int start, end;
     tie(start, end) = getchunk(i, threads, n);
     int chunk_size = get_chunk_size_with_offset(i, start, end, threads, m);
-    // int fixed_start = start * n;
-    // int fixed_end = end * n;
 
     MPI_Send(&(res[(start - 1) * (n)]), chunk_size, MPI_DOUBLE, i, 0,
              MPI_COMM_WORLD);
@@ -149,22 +216,17 @@ void send_chunks(int m, int n, int threads, double *res, const int *fixed, int k
     int fixed_end = fixed_start;
     int fixed_count = 0;
     int end_cap = (end + 1) * n;
-    while (fixed_end < k && fixed[fixed_end] <= end_cap) {
+    while (fixed_end < k && fixed[fixed_end] < end_cap) {
       fixed_count++;
       fixed_end++;
     }
     fixed_start = fixed_end;
-
-    // for (int j = 0; j < k; j++) {
-    //   cout << "fixed[" << j << "] = " << fixed[j] << endl;
-    // }
     
     MPI_Send(&fixed_count, 1, MPI_INT, i, 0,
              MPI_COMM_WORLD);
 
     MPI_Send(&(fixed[fixed_start - fixed_count]), fixed_count, MPI_INT, i, 0,
              MPI_COMM_WORLD);
-    // cout << "fixed_count " << fixed_count << " " << fixed_start << " " << fixed_end << endl;
   }
 }
 
@@ -185,7 +247,7 @@ void print_m(const int m, const int n, const double *v1) {
     for (int j = 0; j < n; j++) {
       cout << v1[i * n + j] << " ";
     }
-    cout << endl;
+    // cout << endl;
   }
 }
 
@@ -239,18 +301,14 @@ int main(int argc, char *argv[]) {
     }
 
     std::sort(fixed_local, fixed_local + k);
-    // cout << "suka ";
-    // for (int i = 0; i < k; i++) {
-    //   cout << fixed_local[i] << " = " << v1[fixed_local[i]] << "; ";
-    // }
-
     send_chunks(m, n, threads, v1, fixed_local, k, fixed_size);
 
     chunk = v1;
     fixed = fixed_local;
 
-    // print_m(m, n, v1);
-    cout << endl;
+    // print_m(m, n, chunk);
+
+    // cout << endl;
   } else {
     chunk = new double[local_chunk_size];
     MPI_Recv(chunk, local_chunk_size, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD,
@@ -267,23 +325,13 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // AntiAliasing
-  // AntiAliasingDirection dir = get_direction(task, threads);
-  // chunk[n + 1] = 101;
   double *flat = new double[local_chunk_size];
 
   for (int i = 0; i < local_chunk_size; i++) {
     flat[i] = chunk[i];
   }
 
-  // string ss = "";
-  //
-  // for (int i = 0; i < fixed_size; i++) {
-  //   ss += to_string(fixed[i]) + " is " + to_string(chunk[fixed[i]]) + " ";
-  // }
-  // cout << "task ss " << task << " size " << fixed_size << " " << ss << endl;
-
-  // if (threads > 1) {
+  auto dir = get_direction(task, threads);
   for (int i = 0; i < I; i++) {
     if (task > 0) {
       MPI_Send(&chunk[n], n, MPI_DOUBLE, task - 1, 0, MPI_COMM_WORLD);
@@ -297,28 +345,11 @@ int main(int argc, char *argv[]) {
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 
-    iterate(chunk, flat, local_chunk_size, n, fixed, fixed_size);
+    iterate(chunk, flat, local_chunk_size, n, fixed, fixed_size, dir);
     auto temp = chunk;
     chunk = flat;
     flat = temp;
   }
-  // } else {
-  //   for (int n = 0; n < iterations; n++) {
-  //     vector_flater_mpi(chunk, flat, count, fixed);
-  //
-  //     auto temp = chunk;
-  //     chunk = flat;
-  //     flat = temp;
-  //
-  //     // cout << "n " << n << endl;
-  //   }
-  // }
-
-
-
-  // if (task == 0) {
-  //   print_m(local_chunk_size/n, n, chunk);
-  // }
 
 
   // Gather
@@ -333,14 +364,6 @@ int main(int argc, char *argv[]) {
     displs[i] = (i == 0) ? 0 : displs[i - 1] + recvcounts[i - 1];
   }
 
-
-  // cout << "task " << task << " chunk[14] " << chunk[14] << endl;
-  // if (task == 0) {
-  //   for (int i = 0; i < threads; i++) {
-  //     cout << recvcounts[i] << " " << displs[i] << endl;
-  //   }
-  // }
-
   int gather_size = (local_end - local_start + 1) * n;
 
   MPI_Gatherv(&chunk[task == 0 ? 0 : n], gather_size, MPI_DOUBLE, res,
@@ -349,9 +372,9 @@ int main(int argc, char *argv[]) {
   double end_time = MPI_Wtime();
 
   if (task == 0) {
-    print_m(m, n, res);
-    cout << endl;
-    cout << end_time - start_time << endl;
+    // print_m(m, n, res);
+    // cout << endl;
+    cout << "threads " << threads << endl << end_time - start_time << endl;
   }
 
   MPI_Finalize();

@@ -1,9 +1,12 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <chrono>
+
+using namespace std;
 
 void read_integer(int &value) {
   std::string line;
@@ -19,44 +22,50 @@ void read_two_integers(int &value1, int &value2) {
 }
 
 struct Element {
-  int x;
-  int y;
+  int pos;
   float_t value;
 };
 
-void read_element(Element &element) {
+void read_element(Element &element, int m) {
   std::string line;
   std::getline(std::cin, line);
   std::istringstream iss(line);
-  iss >> element.x >> element.y >> element.value;
+  int x, y;
+  iss >> x >> y >> element.value;
+  element.pos = x + (y * m);
 }
 
-void iterate(float **initial, float **res, int m, int n, int k,
-             Element *sequence) {
+void iterate(const float *chunk, float *res, int m, int n, int k,
+             Element *sequence, const int *fixed) {
+  int fixed_i = 0;
   for (int y = 0; y < m; y++) {
-    
     for (int x = 0; x < n; x++) {
-      float sum = res[y][x];
+      int pos = x + (y * m);
+      if (fixed_i < k && pos == fixed[fixed_i]) {
+        fixed_i++;
+        continue;
+      }
+      float sum = res[pos];
       int count = 1;
 
       if (y > 0) {
-        sum += initial[y - 1][x];
+        sum += chunk[pos - n];
         count++;
       }
       if (y < m - 1) {
-        sum += initial[y + 1][x];
+        sum += chunk[pos + n];
         count++;
       }
       if (x > 0) {
-        sum += initial[y][x - 1];
+        sum += chunk[pos - 1];
         count++;
       }
       if (x < n - 1) {
-        sum += initial[y][x + 1];
+        sum += chunk[pos + 1];
         count++;
       }
 
-      res[y][x] = sum / count;
+      res[pos] = sum / count;
     }
   }
 }
@@ -71,31 +80,37 @@ int main(int argc, const char* argv[]) {
   Element *sequence = new Element[k];
 
   for (int i = 0; i < k; i++) {
-    read_element(sequence[i]);
+    read_element(sequence[i], m);
   }
 
-  float **initial = new float *[m];
-  float **result = new float *[m];
+  float *initial = new float[m*n];
+  float *result = new float[m*n];
 
-  for (int i = 0; i < m; i++) {
-    initial[i] = new float[n];
-    result[i] = new float[n];
-
-    for (int j = 0; j < n; j++) {
-      initial[i][j] = 0.0;
-      result[i][j] = 0.0;
-    }
+  for (int i = 0; i < m * n; i++) {
+    initial[i] = 0.0;
+    result[i] = 0.0;
   }
+
+  cout << " I = " << I << endl;
+  cout << " m = " << m << endl;
+  cout << " n = " << n << endl;
+  cout << " k = " << k << endl;
+
+  int *fixed = new int[k];
+
+  sort(fixed, fixed + k);
 
   for (int i = 0; i < k; i++) {
     auto el = sequence[i];
-    initial[el.x][el.y] = el.value;
+    initial[el.pos] = el.value;
+    result[el.pos] = el.value;
+    fixed[i] = el.pos;
   }
 
   auto t1 = std::chrono::high_resolution_clock::now();
 
   for (int i = 0; i < I; i++) {
-    iterate(initial, result, m, n, k, sequence);
+    iterate(initial, result, m, n, k, sequence, fixed);
 
     std::swap(initial, result);
   }
@@ -106,11 +121,12 @@ int main(int argc, const char* argv[]) {
 
   std::cout << std::to_string(duration) << std::endl;
 
+  // prints result
   for (int i = 0; i < m; i++) {
-    for (int j = 0; j < n; j++) {
-      std::cout << result[i][j] << " ";
-    }
-    std::cout << std::endl;
+    // for (int j = 0; j < n; j++) {
+    //   std::cout << initial[i * n + j] << " ";
+    // }
+    // std::cout << std::endl;
   }
   // std::cout << duration << std::endl;
 

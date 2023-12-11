@@ -221,7 +221,7 @@ void send_chunks(int m, int n, int threads, double *res, const int *fixed,
     int fixed_end = fixed_start;
     int fixed_count = 0;
     int end_cap = (end + 1) * n;
-    while (fixed_end < k && fixed[fixed_end] < end_cap) {
+    while (fixed_end < k && fixed[fixed_end] <= end_cap) {
       fixed_count++;
       fixed_end++;
     }
@@ -251,7 +251,7 @@ void print_m(const int m, const int n, const double *v1) {
     for (int j = 0; j < n; j++) {
       cout << v1[i * n + j] << " ";
     }
-    // cout << endl;
+    cout << endl;
   }
 }
 
@@ -300,7 +300,11 @@ int main(int argc, char *argv[]) {
     }
 
     int end_cap = (local_end + 1) * n;
-    while (fixed_size < k && fixed_local[fixed_size] < end_cap) {
+    // cout << "foo " << end_cap << endl;
+    // for (int i = 0; i < k; i++) {
+    //   cout << "fixed[" << i << "] = " << fixed_local[i] << endl;
+    // }
+    while (fixed_size < k && fixed_local[fixed_size] <= end_cap) {
       fixed_size++;
     }
 
@@ -311,7 +315,6 @@ int main(int argc, char *argv[]) {
     fixed = fixed_local;
 
     // print_m(m, n, chunk);
-
     // cout << endl;
   } else {
     chunk = new double[local_chunk_size];
@@ -386,8 +389,8 @@ int main(int argc, char *argv[]) {
   double end_time = MPI_Wtime();
 
   if (task == 0) {
-    // print_m(m, n, res);
-    // cout << endl;
+    print_m(m, n, res);
+    cout << endl;
     cout << "threads " << threads << endl << end_time - start_time << endl;
   }
 

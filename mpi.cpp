@@ -325,6 +325,8 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  cout << "task " << task << " bababar" << endl;
+
   double *flat = new double[local_chunk_size];
 
   for (int i = 0; i < local_chunk_size; i++) {
@@ -344,6 +346,7 @@ int main(int argc, char *argv[]) {
       MPI_Recv(&chunk[local_chunk_size - n], n, MPI_DOUBLE, task + 1, 0,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
+    cout << "boobs" << endl;
 
     iterate(chunk, flat, local_chunk_size, n, fixed, fixed_size, dir);
     auto temp = chunk;

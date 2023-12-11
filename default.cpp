@@ -45,7 +45,7 @@ void iterate(const float *chunk, float *res, int m, int n, int k,
         fixed_i++;
         continue;
       }
-      float sum = res[pos];
+      float sum = chunk[pos];
       int count = 1;
 
       if (y > 0) {
@@ -98,7 +98,6 @@ int main(int argc, const char* argv[]) {
 
   int *fixed = new int[k];
 
-  sort(fixed, fixed + k);
 
   for (int i = 0; i < k; i++) {
     auto el = sequence[i];
@@ -106,6 +105,8 @@ int main(int argc, const char* argv[]) {
     result[el.pos] = el.value;
     fixed[i] = el.pos;
   }
+
+  sort(fixed, fixed + k);
 
   auto t1 = std::chrono::high_resolution_clock::now();
 
@@ -123,10 +124,10 @@ int main(int argc, const char* argv[]) {
 
   // prints result
   for (int i = 0; i < m; i++) {
-    // for (int j = 0; j < n; j++) {
-    //   std::cout << initial[i * n + j] << " ";
-    // }
-    // std::cout << std::endl;
+    for (int j = 0; j < n; j++) {
+      std::cout << initial[i * n + j] << " ";
+    }
+    std::cout << std::endl;
   }
   // std::cout << duration << std::endl;
 

@@ -58,10 +58,11 @@ void iterate(const float *chunk, float *res, int m, int n, int k,
   for (int y = 0; y < m; y++) {
     for (int x = 0; x < n; x++) {
       int pos = x + (y * m);
+      // cout << pos << endl;
       if (includes(pos, fixed, k)) {
         continue;
       }
-      float sum = res[pos];
+      float sum = chunk[pos];
       int count = 1;
 
       if (y > 0) {
@@ -123,14 +124,14 @@ int main(int argc, const char *argv[]) {
 
   int *fixed = new int[k];
 
-  sort(fixed, fixed + k);
-
   for (int i = 0; i < k; i++) {
     auto el = sequence[i];
     initial[el.pos] = el.value;
     result[el.pos] = el.value;
     fixed[i] = el.pos;
   }
+
+  sort(fixed, fixed + k);
 
   auto t1 = std::chrono::high_resolution_clock::now();
 

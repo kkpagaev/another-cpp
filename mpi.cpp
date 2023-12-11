@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -56,93 +58,45 @@ MPI_Datatype myDataType;
 MPI_Aint extent;
 
 void iterate(const double *chunk, double *res, int chunk_size, int n,
-             const int *fixed, int fixed_size,
-             const AntiAliasingDirection dir) {
+             const int *fixed, int fixed_size, const AntiAliasingDirection dir,
+             int m) {
   int fixed_i = 0;
-  if (dir == AntiAliasingDirection::FIRST ||
-      dir == AntiAliasingDirection::FULL) {
-    const double *r = &chunk[0];
-    const double *next = &chunk[n];
-
-    {
-      if (fixed_i < fixed_size && 0 == fixed[fixed_i]) {
-        fixed_i++;
-      } else {
-        res[0] = (r[0] + r[1] + next[0]) / 3;
-      }
-    }
-    for (int j = 1; j < n - 1; j++) {
-      if (fixed_i < fixed_size && j == fixed[fixed_i]) {
-        fixed_i++;
-        continue;
-      }
-      res[j] = (r[j] + r[j - 1] + r[j + 1] + next[j]) / 4;
-    }
-    {
-      if (fixed_i < fixed_size && n - 1 == fixed[fixed_i]) {
-        fixed_i++;
-      } else {
-        res[n - 1] = (r[n - 1] + r[n - 2] + next[n - 1]) / 3;
-      }
-    }
+  int start_row = dir == AntiAliasingDirection::FIRST ? 0 : 1;
+  int end_row = dir == AntiAliasingDirection::LAST ? chunk_size / n : chunk_size/n - 1; 
+  if (dir == AntiAliasingDirection::FULL) {
+    start_row = 0;
+    end_row = chunk_size / n;
   }
-  for (int i = 1; i < chunk_size / n - 1; i++) {
-    const double *prev = &chunk[(i - 1) * n];
-    const double *r = &chunk[i * n];
-    const double *next = &chunk[(i + 1) * n];
-    {
-      int index = i * n;
-      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
-        fixed_i++;
-      } else {
-        res[index] = (r[0] + r[1] + prev[0] + next[0]) / 4;
-      }
-    }
-    for (int j = 1; j < n - 1; j++) {
-      int index = i * n + j;
+  // cout << "start_row " << start_row << " end_row " << end_row << " dir " << dir << endl;
+  for (int y = start_row; y < end_row; y++) {
+    for (int x = 0; x < n; x++) {
+      int pos = x + (y * n);
 
-      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
+      if (fixed_i < fixed_size && pos == fixed[fixed_i]) {
         fixed_i++;
         continue;
       }
-      res[index] = (r[j] + r[j - 1] + r[j + 1] + prev[j] + next[j]) / 5;
-    }
-    {
-      int index = i * n + n - 1;
-      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
-        fixed_i++;
-      } else {
-        res[index] = (r[n - 1] + r[n - 2] + prev[n - 1] + next[n - 1]) / 4;
+      double sum = chunk[pos];
+      int count = 1;
+
+      if (y > 0) {
+        sum += chunk[pos - n];
+        count++;
       }
-    }
-  }
-  if (dir == AntiAliasingDirection::LAST ||
-      dir == AntiAliasingDirection::FULL) {
-    const double *r = &chunk[chunk_size - n];
-    const double *prev = &chunk[chunk_size - (n * 2)];
-    {
-      int index = chunk_size - n;
-      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
-        fixed_i++;
-      } else {
-        res[index] = (r[0] + r[1] + prev[0]) / 3;
+      if (y < m - 1) {
+        sum += chunk[pos + n];
+        count++;
       }
-    }
-    for (int j = 1; j < n - 1; j++) {
-      int index = chunk_size - n + j;
-      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
-        fixed_i++;
-        continue;
+      if (x > 0) {
+        sum += chunk[pos - 1];
+        count++;
       }
-      res[index] = (r[j] + r[j - 1] + r[j + 1] + prev[j]) / 4;
-    }
-    {
-      int index = chunk_size - 1;
-      if (fixed_i < fixed_size && index == fixed[fixed_i]) {
-        fixed_i++;
-      } else {
-        res[index] = (r[n - 1] + r[n - 2] + prev[n - 1]) / 3;
+      if (x < n - 1) {
+        sum += chunk[pos + 1];
+        count++;
       }
+
+      res[pos] = sum / count;
     }
   }
 }
@@ -221,7 +175,7 @@ void send_chunks(int m, int n, int threads, double *res, const int *fixed,
     int fixed_end = fixed_start;
     int fixed_count = 0;
     int end_cap = (end + 1) * n;
-    while (fixed_end < k && fixed[fixed_end] <= end_cap) {
+    while (fixed_end < k && fixed[fixed_end] < end_cap) {
       fixed_count++;
       fixed_end++;
     }
@@ -299,20 +253,26 @@ int main(int argc, char *argv[]) {
       v1[sequence[i].pos] = sequence[i].value;
     }
 
-    int end_cap = (local_end + 1) * n;
-    // cout << "foo " << end_cap << endl;
-    // for (int i = 0; i < k; i++) {
-    //   cout << "fixed[" << i << "] = " << fixed_local[i] << endl;
-    // }
-    while (fixed_size < k && fixed_local[fixed_size] <= end_cap) {
-      fixed_size++;
-    }
 
     std::sort(fixed_local, fixed_local + k);
+
+    int end_cap = (local_end + 1) * n;
+
+    while (fixed_size < k && fixed_local[fixed_size] < end_cap) {
+      fixed_size++;
+    }
+    // cout << "fixed_size " << fixed_size << endl;
+
     send_chunks(m, n, threads, v1, fixed_local, k, fixed_size);
 
     chunk = v1;
     fixed = fixed_local;
+
+    // cout << "fixed: ";
+    // for (int i = 0; i < k; i++) {
+    //   cout << fixed[i] << " ";
+    // }
+    // cout << endl;
 
     // print_m(m, n, chunk);
     // cout << endl;
@@ -331,7 +291,16 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // cout << "task " << task << " bababar" << endl;
+  // string ss = "task: " + to_string(task) + "fixed: ";
+  //
+  // for (int i = 0; i < fixed_size; i++) {
+  //   ss += to_string(fixed[i]) + " ";
+  // }
+  //
+  // cout << ss << endl;
+  //
+
+  // cout << "task " << task << " bababar" << fixed_size << endl;
 
   double *flat = new double[local_chunk_size];
 
@@ -358,12 +327,12 @@ int main(int argc, char *argv[]) {
                 MPI_COMM_WORLD, &requests.back());
       requests.push_back(MPI_Request());
       MPI_Irecv(&chunk[local_chunk_size - n], n, MPI_DOUBLE, task + 1, 0,
-               MPI_COMM_WORLD, &requests.back());
+                MPI_COMM_WORLD, &requests.back());
     }
     MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
     requests.clear();
 
-    iterate(chunk, flat, local_chunk_size, n, fixed, fixed_size, dir);
+    iterate(chunk, flat, local_chunk_size, n, fixed, fixed_size, dir, local_chunk_size / n);
     auto temp = chunk;
     chunk = flat;
     flat = temp;

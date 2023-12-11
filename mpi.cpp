@@ -328,7 +328,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  cout << "task " << task << " bababar" << endl;
+  // cout << "task " << task << " bababar" << endl;
 
   double *flat = new double[local_chunk_size];
 
